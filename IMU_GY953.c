@@ -2,22 +2,30 @@
 #include "IMU_GY953.h"
 
 /******************************************************************************/
-
-/******************************************************************************/
 SPI_HandleTypeDef* IMU_hSPI;
 /******************************************************************************/
-
-/******************************************************************************/
-/******************************************************************************/
+/** @brief Connect the spi handler to the IMU.
+  * 
+  * @param hspi: The spi handler.  
+  * @return None. */
 void IMU_Init_Handle(SPI_HandleTypeDef *hspi){
 	IMU_hSPI = hspi;
 }
 
+/** @brief Intialize the IMU.
+  * 
+  * @param IMUx: The IMU structure.  
+  * @param frequency: The data output frequency of IMU.  
+  * @param MagIO: The switch of magnetic sensor.  
+  * @param GyroIO: The switch of Gyro sensor.  
+  * @param AccIO: The switch of acceleration sensor.   
+  * Can only disable one of the three sensors at the same time.
+  * @return None. */
 void IMU_Init_SET(IMU_Struct *IMUx, int frequency, uint8_t MagIO, uint8_t GyroIO, uint8_t AccIO){
 	HAL_Delay(1000);
 	IMU_Calibration(IMUx);
 	HAL_Delay(1000);
-	HAL_GPIO_WritePin(IMUx->GPIO, IMUx->GPIO_PIN, GPIO_PIN_RESET);
+	IMU_SPI_Enable;
 	uint8_t data[2];
 	data[0] = WriteIMU | SetReg;
 	if (frequency == 100){
@@ -29,12 +37,15 @@ void IMU_Init_SET(IMU_Struct *IMUx, int frequency, uint8_t MagIO, uint8_t GyroIO
 	else data[1] = RegisterA | 0x03 | MagIO<<6 | GyroIO<<5 | AccIO<<4;
 	HAL_SPI_Transmit(IMU_hSPI, data, 2, 50);
 	
-	
-	HAL_GPIO_WritePin(IMUx->GPIO, IMUx->GPIO_PIN, GPIO_PIN_SET);
+	IMU_SPI_Disable;
 }
 
+/** @brief Calibrating the IMU.
+  * 
+  * @param IMUx: The IMU structure.  
+  * @return None. */
 void IMU_Calibration(IMU_Struct *IMUx){
-	HAL_GPIO_WritePin(IMUx->GPIO, IMUx->GPIO_PIN, GPIO_PIN_RESET);
+	IMU_SPI_Enable;
 	uint8_t data[2];
 	data[0] = WriteIMU | ConReg;
 	data[1] = 0x04 | RegisterB; // Mag
@@ -43,19 +54,32 @@ void IMU_Calibration(IMU_Struct *IMUx){
 	data[1] = 0x08 | RegisterB; // Gyro & Acc
 	HAL_SPI_Transmit(IMU_hSPI, data, 2, 50);
 	
-	HAL_GPIO_WritePin(IMUx->GPIO, IMUx->GPIO_PIN, GPIO_PIN_SET);
+	IMU_SPI_Disable;
 }
 
-void IMU_ContinuousReadData(IMU_Struct *IMUx){
+/** @brief Read data from IMU with continuous mode.
+  * 
+  * @param IMUx: The IMU structure.  
+  * @return the flag if it read data success. */
+uint8_t IMU_ContinuousReadData(IMU_Struct *IMUx){
+	if (IMUx->read_Flag){
 	uint8_t cmd = ContinuousReadIMU; /* 連續讀取模式 */
 	
-	HAL_GPIO_WritePin(IMUx->GPIO, IMUx->GPIO_PIN, GPIO_PIN_RESET);
+	IMU_SPI_Enable;
 	HAL_SPI_Transmit(IMU_hSPI, &cmd, 1, 50);
 	HAL_SPI_Receive(IMU_hSPI, IMUx->TMP_buf, 41, 150);
-	HAL_GPIO_WritePin(IMUx->GPIO, IMUx->GPIO_PIN, GPIO_PIN_SET);
+	IMU_SPI_Disable;
 	IMU_handleData(IMUx);
+
+	return 1;
+	}
+	else return 0;
 }
 
+/** @brief Handle the data from IMU.
+  * 
+  * @param IMUx: The IMU structure.  
+  * @return None. */
 void IMU_handleData(IMU_Struct *IMUx){
 	memcpy(IMUx->data_buf, IMUx->TMP_buf, sizeof(IMUx->TMP_buf)); // 由IMU擷取的資料複製
 	
@@ -88,17 +112,12 @@ void IMU_handleData(IMU_Struct *IMUx){
 	IMUx->Magxyz[1] = (float)tmp[1]/6.7;
 	IMUx->Magxyz[2] = (float)tmp[2]/6.7;
 }
-//void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin)
-//{
-//  /* Prevent unused argument(s) compilation warning */
-//  UNUSED(GPIO_Pin);
-//  /* NOTE: This function Should not be modified, when the callback is needed,
-//           the HAL_GPIO_EXTI_Callback could be implemented in the user file
-//   */
-//		// Åª¨ú GY953 ¼Æ¾Ú¦b¤¤Â_Ä²µo®ÉÅª¨ú IMU ¸ê°T 
-//		if(!Flag){
-//			IMU_ContinuousReadData(&IMU1);
-//			Flag=1;
-//			HAL_GPIO_TogglePin(GPIOD, GPIO_PIN_12);
-//		}
-//}
+
+/** @brief Reset the read flag of IMU.
+  * It should be called in the GPIO_EXTI function.
+  * @param IMUx: The IMU structure.  
+  * @return None. */
+void IMU_ResetFlag(IMU_Struct *IMUx){
+	IMUx->read_Flag = IMUx->read_Flag | 1;
+}
+/******************************************************************************/
